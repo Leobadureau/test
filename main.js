@@ -31,9 +31,6 @@ let hitTestSourceRequested = false;
 let current_object = null;
 let loading_model = null;
 
-let mixer = null;
-const clock = new THREE.Clock();
-
 // Modèle actuellement sélectionné dans le menu
 let selected_model = '1';
 
@@ -42,6 +39,7 @@ let placed_objects = [];
 
 const raycaster = new THREE.Raycaster();
 const controllerRotation = new THREE.Matrix4();
+const clock = new THREE.Clock();
 
 init();
 
@@ -282,6 +280,8 @@ function init() {
     placeButton = document.getElementById('placeButton');
     rotationSurface = document.getElementById('rotationSurface');
 
+    // Les interactions avec le menu et les boutons ne doivent pas
+    // déclencher un événement de sélection dans la scène WebXR.
     domOverlay.addEventListener(
         'beforexrselect',
         function (event) {
@@ -370,6 +370,7 @@ function init() {
                 );
             }
 
+            // Seul le modèle qui n'a pas encore été placé est caché.
             if (
                 current_object &&
                 !placed_objects.includes(current_object)
@@ -405,6 +406,7 @@ function init() {
 
             clearSelectionHelper();
 
+            // Le modèle non placé revient à sa position initiale.
             if (
                 current_object &&
                 !placed_objects.includes(current_object)
@@ -455,28 +457,6 @@ function loadModel(model) {
         'model/' + model + '.glb',
 
         function (gltf) {
-
-            // ANIMATION DU GLB
-            if (mixer) {
-                mixer.stopAllAction();
-                mixer = null;
-            }
-
-            if (gltf.animations && gltf.animations.length > 0) {
-
-                mixer = new THREE.AnimationMixer(
-                    gltf.scene
-                );
-
-                const action =
-                    mixer.clipAction(
-                        gltf.animations[0]
-                    );
-
-                action.reset();
-                action.play();
-            }
-
 
             // Si un autre modèle a été sélectionné
             // pendant le chargement, on ignore celui-ci
@@ -538,6 +518,34 @@ function loadModel(model) {
 
             current_object.userData.modelId = model;
 
+
+            // -------------------------------------------------
+            // ANIMATION DU GLB
+            // -------------------------------------------------
+
+            if (
+                gltf.animations &&
+                gltf.animations.length > 0
+            ) {
+
+                const objectMixer =
+                    new THREE.AnimationMixer(
+                        model_scene
+                    );
+
+                const action =
+                    objectMixer.clipAction(
+                        gltf.animations[0]
+                    );
+
+                action.reset();
+                action.play();
+
+                current_object.userData.mixer =
+                    objectMixer;
+            }
+
+
             current_object.add(
                 model_scene
             );
@@ -563,6 +571,7 @@ function loadModel(model) {
                 0,
                 -2
             );
+
 
             current_object.visible = true;
 
@@ -624,12 +633,16 @@ document.getElementById('placeButton').addEventListener(
     onSelect
 );
 
-
 document.getElementById('clearButton').addEventListener(
     'click',
     function () {
 
         placed_objects.forEach(function (object) {
+
+            if (object.userData.mixer) {
+                object.userData.mixer.stopAllAction();
+            }
+
             scene.remove(object);
         });
 
@@ -637,17 +650,17 @@ document.getElementById('clearButton').addEventListener(
             current_object &&
             !placed_objects.includes(current_object)
         ) {
+
+            if (current_object.userData.mixer) {
+                current_object.userData.mixer.stopAllAction();
+            }
+
             scene.remove(current_object);
         }
 
         placed_objects = [];
         current_object = null;
         loading_model = null;
-
-        if (mixer) {
-            mixer.stopAllAction();
-            mixer = null;
-        }
 
         clearSelectionHelper();
     }
@@ -942,12 +955,29 @@ function animate(
     frame
 ) {
 
-    // Mise à jour de l'animation du GLB
     const delta =
         clock.getDelta();
 
-    if (mixer) {
-        mixer.update(delta);
+
+    // Mise à jour de l'animation
+    // de chaque modèle placé
+    placed_objects.forEach(function (object) {
+
+        if (object.userData.mixer) {
+            object.userData.mixer.update(delta);
+        }
+    });
+
+
+    // Mise à jour de l'animation
+    // du modèle en attente de placement
+    if (
+        current_object &&
+        !placed_objects.includes(current_object) &&
+        current_object.userData.mixer
+    ) {
+
+        current_object.userData.mixer.update(delta);
     }
 
 
