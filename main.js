@@ -31,6 +31,9 @@ let hitTestSourceRequested = false;
 let current_object = null;
 let loading_model = null;
 
+let mixer = null;
+const clock = new THREE.Clock();
+
 // Modèle actuellement sélectionné dans le menu
 let selected_model = '1';
 
@@ -95,6 +98,7 @@ function init() {
         .load(
             'textures/environment.hdr',
             function (texture) {
+
                 environmentRenderTarget =
                     pmremGenerator.fromEquirectangular(texture);
 
@@ -107,6 +111,7 @@ function init() {
             },
             undefined,
             function (error) {
+
                 pmremGenerator.dispose();
                 pmremGenerator = null;
 
@@ -277,8 +282,6 @@ function init() {
     placeButton = document.getElementById('placeButton');
     rotationSurface = document.getElementById('rotationSurface');
 
-    // Les interactions avec le menu et les boutons ne doivent pas
-    // déclencher un événement de sélection dans la scène WebXR.
     domOverlay.addEventListener(
         'beforexrselect',
         function (event) {
@@ -290,10 +293,12 @@ function init() {
     );
 
     controller = renderer.xr.getController(0);
+
     controller.addEventListener(
         'select',
         onObjectSelect
     );
+
     scene.add(controller);
 
     const options = {
@@ -365,7 +370,6 @@ function init() {
                 );
             }
 
-            // Seul le modèle qui n'a pas encore été placé est caché.
             if (
                 current_object &&
                 !placed_objects.includes(current_object)
@@ -401,7 +405,6 @@ function init() {
 
             clearSelectionHelper();
 
-            // Le modèle non placé revient à sa position initiale.
             if (
                 current_object &&
                 !placed_objects.includes(current_object)
@@ -452,6 +455,28 @@ function loadModel(model) {
         'model/' + model + '.glb',
 
         function (gltf) {
+
+            // ANIMATION DU GLB
+            if (mixer) {
+                mixer.stopAllAction();
+                mixer = null;
+            }
+
+            if (gltf.animations && gltf.animations.length > 0) {
+
+                mixer = new THREE.AnimationMixer(
+                    gltf.scene
+                );
+
+                const action =
+                    mixer.clipAction(
+                        gltf.animations[0]
+                    );
+
+                action.reset();
+                action.play();
+            }
+
 
             // Si un autre modèle a été sélectionné
             // pendant le chargement, on ignore celui-ci
@@ -519,6 +544,7 @@ function loadModel(model) {
 
             // Tous les modèles ont une dimension maximale de 50 cm.
             if (max_size > 0) {
+
                 current_object.scale.setScalar(
                     0.5 / max_size
                 );
@@ -537,7 +563,6 @@ function loadModel(model) {
                 0,
                 -2
             );
-
 
             current_object.visible = true;
 
@@ -599,9 +624,11 @@ document.getElementById('placeButton').addEventListener(
     onSelect
 );
 
+
 document.getElementById('clearButton').addEventListener(
     'click',
     function () {
+
         placed_objects.forEach(function (object) {
             scene.remove(object);
         });
@@ -616,6 +643,12 @@ document.getElementById('clearButton').addEventListener(
         placed_objects = [];
         current_object = null;
         loading_model = null;
+
+        if (mixer) {
+            mixer.stopAllAction();
+            mixer = null;
+        }
+
         clearSelectionHelper();
     }
 );
@@ -642,6 +675,7 @@ function onSelect() {
     const objectWasAlreadyPlaced =
         placed_objects.includes(current_object);
 
+
     // Place ou déplace le modèle à l'endroit du réticule.
     current_object.position.setFromMatrixPosition(
         reticle.matrix
@@ -651,13 +685,18 @@ function onSelect() {
 
 
     if (!objectWasAlreadyPlaced) {
+
         placed_objects.push(current_object);
 
         // Prépare automatiquement une nouvelle copie du même modèle.
         current_object = null;
+
         clearSelectionHelper();
+
         placeButton.style.display = 'none';
+
         loadModel(selected_model);
+
     } else if (selectionHelper) {
 
         // Le même objet reste sélectionné après son déplacement.
@@ -693,33 +732,44 @@ function onObjectSelect() {
         return;
     }
 
-    let selectedObject = intersections[0].object;
+    let selectedObject =
+        intersections[0].object;
 
     while (
         selectedObject.parent &&
         !placed_objects.includes(selectedObject)
     ) {
-        selectedObject = selectedObject.parent;
+
+        selectedObject =
+            selectedObject.parent;
     }
 
     if (!placed_objects.includes(selectedObject)) {
         return;
     }
 
+
     // Supprime l'éventuelle copie encore en attente de placement.
     if (
         current_object &&
         !placed_objects.includes(current_object)
     ) {
+
         scene.remove(current_object);
     }
 
     loading_model = null;
-    current_object = selectedObject;
-    selected_model =
-        current_object.userData.modelId || selected_model;
 
-    showSelectionHelper(current_object);
+    current_object =
+        selectedObject;
+
+    selected_model =
+        current_object.userData.modelId ||
+        selected_model;
+
+    showSelectionHelper(
+        current_object
+    );
 }
 
 
@@ -727,29 +777,39 @@ function showSelectionHelper(object) {
 
     clearSelectionHelper();
 
-    selectionHelper = new THREE.BoxHelper(
-        object,
-        0xffff00
+    selectionHelper =
+        new THREE.BoxHelper(
+            object,
+            0xffff00
+        );
+
+    scene.add(
+        selectionHelper
     );
 
-    scene.add(selectionHelper);
-    rotationSurface.style.display = 'block';
+    rotationSurface.style.display =
+        'block';
 }
 
 
 function clearSelectionHelper() {
 
     if (rotationSurface) {
-        rotationSurface.style.display = 'none';
+        rotationSurface.style.display =
+            'none';
     }
 
     if (!selectionHelper) {
         return;
     }
 
-    scene.remove(selectionHelper);
+    scene.remove(
+        selectionHelper
+    );
+
     selectionHelper.geometry.dispose();
     selectionHelper.material.dispose();
+
     selectionHelper = null;
 }
 
@@ -764,8 +824,12 @@ function rotateObject() {
         current_object &&
         selectionHelper
     ) {
-        current_object.rotation.y += deltaX / 100;
-        current_object.rotation.x += deltaY / 100;
+
+        current_object.rotation.y +=
+            deltaX / 100;
+
+        current_object.rotation.x +=
+            deltaY / 100;
 
         if (selectionHelper) {
             selectionHelper.update();
@@ -780,7 +844,9 @@ function rotateObjectOnZ(angle) {
         current_object &&
         selectionHelper
     ) {
-        current_object.rotation.z += angle;
+
+        current_object.rotation.z +=
+            angle;
 
         if (selectionHelper) {
             selectionHelper.update();
@@ -803,13 +869,17 @@ function scaleObject(scaleFactor) {
         current_object.userData.initialScale ||
         current_object.scale.x;
 
-    const newScale = THREE.MathUtils.clamp(
-        current_object.scale.x * scaleFactor,
-        initialScale * 0.25,
-        initialScale * 4
+    const newScale =
+        THREE.MathUtils.clamp(
+            current_object.scale.x * scaleFactor,
+            initialScale * 0.25,
+            initialScale * 4
+        );
+
+    current_object.scale.setScalar(
+        newScale
     );
 
-    current_object.scale.setScalar(newScale);
     selectionHelper.update();
 }
 
@@ -828,8 +898,11 @@ function isInterfaceElement(target) {
 function getTouchAngle(touches) {
 
     return Math.atan2(
-        touches[1].pageY - touches[0].pageY,
-        touches[1].pageX - touches[0].pageX
+        touches[1].pageY -
+        touches[0].pageY,
+
+        touches[1].pageX -
+        touches[0].pageX
     );
 }
 
@@ -837,8 +910,11 @@ function getTouchAngle(touches) {
 function getTouchDistance(touches) {
 
     return Math.hypot(
-        touches[1].pageX - touches[0].pageX,
-        touches[1].pageY - touches[0].pageY
+        touches[1].pageX -
+        touches[0].pageX,
+
+        touches[1].pageY -
+        touches[0].pageY
     );
 }
 
@@ -865,6 +941,15 @@ function animate(
     timestamp,
     frame
 ) {
+
+    // Mise à jour de l'animation du GLB
+    const delta =
+        clock.getDelta();
+
+    if (mixer) {
+        mixer.update(delta);
+    }
+
 
     // Pas de session AR
     if (!frame) {
@@ -964,22 +1049,30 @@ function animate(
             if (pose) {
 
                 reticle.visible = true;
+
                 placeButton.style.display =
-                    current_object ? 'block' : 'none';
+                    current_object
+                        ? 'block'
+                        : 'none';
 
                 reticle.matrix.fromArray(
                     pose.transform.matrix
                 );
+
             } else {
 
                 reticle.visible = false;
-                placeButton.style.display = 'none';
+
+                placeButton.style.display =
+                    'none';
             }
 
         } else {
 
             reticle.visible = false;
-            placeButton.style.display = 'none';
+
+            placeButton.style.display =
+                'none';
         }
     }
 
